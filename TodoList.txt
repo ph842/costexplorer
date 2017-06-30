@@ -1,0 +1,54 @@
+# todo
+#
+# EC2 : Obtenir des infos sur le monitoring :
+# - Utilisation CPU sur les 7 derniers jours ? Sous-utilisation ou Sur-utilisation (CloudWatch)
+# Done - Instance �teinte depuis longtemps ?
+# Done - Sizing
+# - Identifications instances : on-demand ou reserved ?
+# - On ne monitore que les on-demand pour l'instant
+# - Est-ce qu'il existe une g�n�ration plus r�cente ?
+#
+((Invoke-WebRequest http://docs.aws.amazon.com/cli/latest/reference/ec2/describe-spot-price-history.html).ParsedHtml.all | Where-Object{ $_.classname -eq "highlight-python" } | Where-Object { $_.innerHTML -like "*values are:*" } | select -ExpandProperty innerText).Replace('"string" "string" ...',"").Replace("Where valid values are:","").Replace(" ","").Trim()
+#
+#
+# RDS : Comme pour EC2:
+# RDS Stopped instances
+# 
+# ID Snapshots totaux
+# ID Snapshots vieux de plus de deux semaines
+#
+# ID Volumes EBS totaux
+# ID Volumes EBS non mont�s depuis plus de deux semaines
+#
+# ID Unused ELBs
+# 
+# S3 : Obtenir la taille des buckets & leur nombre
+#
+# Trusted Advisor API Calls ?
+
+$dimension1 = New-Object Amazon.CloudWatch.Model.Dimension
+$dimension1.set_Name("InstanceId")
+# Instance � tester
+$dimension1.set_Value("i-0af40a8e091edad5a")
+
+#Faire en sorte que les dates soient automatiques (jour actuel et j-30)
+$data = (Get-CWMetricStatistic -MetricName CPUUtilization -StartTime 2017-06-22T12:00:00 -EndTime 2017-06-26T12:00:00 -Period 3600 -Namespace AWS/EC2 -Statistics @("Sum","SampleCount","Average","Minimum","Maximum") -Dimension $dimension1 -Region eu-central-1)
+
+$data = (Get-CWMetricStatistic -MetricName CPUUtilization -StartTime 2017-06-22T12:00:00 -EndTime 2017-06-26T12:00:00 -Period 3600 -Namespace AWS/EC2 -Statistics "Maximum" -Dimension $dimension1 -Region eu-central-1)
+
+foreach($datapoint in $data.Datapoints){
+	$grandTotal += $datapoint.Maximum
+}
+# Moyenne : Average : $grandTotal/$data.Datapoints.Count
+
+#
+Todo
+
+Hashtable pour comparer les générations et voir si les instances sont à jour
+Custom counters pour obtenir l'espace disque libre sous windows
+RDS
+RDS Snapshots
+ELB monitoring
+S3 Bucket number and size
+Trusted advisor api calls
+CSV Export
