@@ -353,20 +353,18 @@ $AWSRegions = (Get-AWSRegion).Region
 
 # function Get-OwnerId
 # {
-#     param
-#     (
-#         $Region
-#     )
-
-#     if($OwnerId -eq $NULL)
+#     foreach($Region in $AWSRegions)
 #     {
 #         $OwnerId = ((Get-EC2Instance -Region $Region) | Select-Object -ExpandProperty OwnerId -Unique)
+#         $OwnerId
 #     }
 
-#     return $OwnerId
+    
+# #     return $OwnerId
 # }
 function Start-Main
 {
+    # Get-OwnerId
     # Fetching information on the AWS account
     foreach($Region in $AWSRegions)
     {
@@ -383,27 +381,27 @@ function Start-Main
         $AllSnapshotObjects += Get-OziAuditEC2Snapshots $Region $OwnerId
     } 
     Write-Output "`n"
-    Show-Summary $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects
-    Show-GlobalTable $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects 
-    # foreach($Instance in $AllInstanceObjects)
-    # {
-    #     Write-Output $Instance.InstanceId
-    # }
-    # foreach($Volume in $AllVolumeObjects)
-    # {
-    #     Write-Output $Volume.VolumeId
-    # }
-    # foreach($ReservedInstance in $AllReservedInstanceObjects)
-    # {
-    #     Write-Output $ReservedInstance.State
-    # }
-    # foreach($EIPAddress in $AllAddressObjects)
-    # {
-    #     Write-Output $EIPAddress.AllocationId
-    # }
-    # foreach($Snapshot in $AllSnapshotObjects)
-    # {
-    #     Write-Output $Snapshot.SnapshotId
-    # }             
+    #Show-Summary $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects
+    #Show-GlobalTable $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects 
+    foreach($Instance in $AllInstanceObjects)
+    {
+        $Instance | Export-CSV -Path Instance.csv -Append -NoTypeInformation
+    }
+    foreach($Volume in $AllVolumeObjects)
+    {
+         $Volume | Export-CSV -Path Volume.csv -Append -NoTypeInformation
+    }
+    foreach($ReservedInstance in $AllReservedInstanceObjects)
+    {
+        $ReservedInstance | Export-CSV -Path ReservedInstance.csv -Append -NoTypeInformation
+    }
+    foreach($EIPAddress in $AllAddressObjects)
+    {
+        $EIPAddress | Export-CSV -Path EIPAddress.csv -Append -NoTypeInformation
+    }
+    foreach($Snapshot in $AllSnapshotObjects)
+    {
+        $Snapshot | Export-CSV -Path Snapshot.csv -Append -NoTypeInformation
+    }             
 }
 Start-Main
