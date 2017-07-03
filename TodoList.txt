@@ -42,13 +42,17 @@ foreach($datapoint in $data.Datapoints){
 # Moyenne : Average : $grandTotal/$data.Datapoints.Count
 
 #
+Done - RDS
+Done - RDS Snapshots
+Done - CSV Export
+
 Todo
 
 Hashtable pour comparer les générations et voir si les instances sont à jour
 Custom counters pour obtenir l'espace disque libre sous windows
-RDS
-RDS Snapshots
 ELB monitoring
 S3 Bucket number and size
 Trusted advisor api calls
-Done: CSV Export
+
+
+
