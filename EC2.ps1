@@ -92,7 +92,8 @@ function Get-OziAuditEBSVolumes
             # http://docs.aws.amazon.com/powershell/latest/reference/items/Get-EC2Volume.html
             $VolumeObject = New-Object System.Object
             $VolumeObject | Add-Member -type NoteProperty -name Region -value $Region
-            $VolumeObject | Add-Member -type NoteProperty -name Attachments -value $v.Attachments      
+            $VolumeObject | Add-Member -type NoteProperty -name AttachmentState -value $v.Attachments.State      
+            $VolumeObject | Add-Member -type NoteProperty -name AttachmentInstance -value $v.Attachments.InstanceId
             $VolumeObject | Add-Member -type NoteProperty -name AvailabilityZone -value $v.AvailabilityZone
             $VolumeObject | Add-Member -type NoteProperty -name CreateTime -value $v.CreateTime
             $VolumeObject | Add-Member -type NoteProperty -name Iops -value $v.Iops
@@ -347,24 +348,33 @@ function Show-GlobalTable
 }
 
 $AWSCredentialsProfile = 'default'
-$OwnerId = ''
 $AWSRegions = (Get-AWSRegion).Region
 #$AWSRegions = 'eu-central-1','us-east-1','ap-northeast-1'
 
-# function Get-OwnerId
-# {
-#     foreach($Region in $AWSRegions)
-#     {
-#         $OwnerId = ((Get-EC2Instance -Region $Region) | Select-Object -ExpandProperty OwnerId -Unique)
-#         $OwnerId
-#     }
+function Get-OwnerId
+{
+    foreach($Region in $AWSRegions)
+    {
+        $OwnerIdExists = ((Get-EC2Instance -Region $Region) | Select-Object -ExpandProperty OwnerId -Unique)
+        if($OwnerIdExists)
+        {
+            $OwnerId = $OwnerIdExists
+        }        
+    }
+    return $OwnerId
+}
 
     
 # #     return $OwnerId
 # }
 function Start-Main
 {
-    # Get-OwnerId
+    $CurrentTime = $(Get-Date -Format yyyyMMdd-hhmmss)    
+    Start-Transcript -Path "$($CurrentTime).txt"
+    
+    Write-Output "Script started at $CurrentTime"
+    $OwnerId = Get-OwnerId
+    Write-Output "OwnerId: $OwnerId"
     # Fetching information on the AWS account
     foreach($Region in $AWSRegions)
     {
@@ -381,27 +391,34 @@ function Start-Main
         $AllSnapshotObjects += Get-OziAuditEC2Snapshots $Region $OwnerId
     } 
     Write-Output "`n"
-    #Show-Summary $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects
-    #Show-GlobalTable $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects 
+
+    Show-Summary $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects
+    Show-GlobalTable $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects 
+    
+    Write-Output "`n"
+    Write-Output "Exporting data to CSV:"
+
     foreach($Instance in $AllInstanceObjects)
     {
-        $Instance | Export-CSV -Path Instance.csv -Append -NoTypeInformation
+        $Instance | Export-CSV -Path $CurrentTime-Instance.csv -Append -NoTypeInformation -Delimiter ";"
     }
     foreach($Volume in $AllVolumeObjects)
     {
-         $Volume | Export-CSV -Path Volume.csv -Append -NoTypeInformation
+         $Volume | Export-CSV -Path $CurrentTime-Volume.csv -Append -NoTypeInformation -Delimiter ";"
     }
     foreach($ReservedInstance in $AllReservedInstanceObjects)
     {
-        $ReservedInstance | Export-CSV -Path ReservedInstance.csv -Append -NoTypeInformation
+        $ReservedInstance | Export-CSV -Path $CurrentTime-ReservedInstance.csv -Append -NoTypeInformation -Delimiter ";"
     }
     foreach($EIPAddress in $AllAddressObjects)
     {
-        $EIPAddress | Export-CSV -Path EIPAddress.csv -Append -NoTypeInformation
+        $EIPAddress | Export-CSV -Path $CurrentTime-EIPAddress.csv -Append -NoTypeInformation -Delimiter ";"
     }
     foreach($Snapshot in $AllSnapshotObjects)
     {
-        $Snapshot | Export-CSV -Path Snapshot.csv -Append -NoTypeInformation
-    }             
+        $Snapshot | Export-CSV -Path $CurrentTime-Snapshot.csv -Append -NoTypeInformation -Delimiter ";"
+    }    
+    Write-Output "Done."
+    Stop-Transcript             
 }
 Start-Main
