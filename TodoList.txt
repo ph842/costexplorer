@@ -50,11 +50,11 @@ Done - CSV Export
 Done - Estimate monthly pricing
 Done -  Hashtable pour comparer les générations et voir si les instances sont à jour
 Done - RDS monitoring
+Done - S3 Bucket number and size
 
 Todo
 
 Custom counters pour obtenir l'espace disque libre sous windows - Necéssite un agent installé localement
 ELB monitoring
-RDS monitoring
-S3 Bucket number and size
+
 Trusted advisor api calls
