@@ -169,7 +169,7 @@ function Get-OziAuditEC2Snapshots
             $SnapshotObject | Add-Member -type NoteProperty -name StartTime -value $s.StartTime
             $SnapshotObject | Add-Member -type NoteProperty -name State -value $s.State
             $SnapshotObject | Add-Member -type NoteProperty -name StateMessage -value $s.StateMessage
-            $SnapshotObject | Add-Member -type NoteProperty -name Tags -value $s.Tags
+            $SnapshotObject | Add-Member -type NoteProperty -name Tags -value $s.Tags.Name
             $SnapshotObject | Add-Member -type NoteProperty -name VolumeId -value $s.VolumeId
             $SnapshotObject | Add-Member -type NoteProperty -name VolumeSize -value $s.VolumeSize
             $AllSnapshotObjects += $SnapshotObject
@@ -196,7 +196,7 @@ function Get-OziAuditRDSDBInstances
     {
         foreach($rds in $RDSDBInstances)
         {    
-            # Building the RDSDBInstanceObject with information coming from the AWS EC2 API
+            # Building the RDSDBInstanceObject with information coming from the AWS RDS API
             # http://docs.aws.amazon.com/powershell/latest/reference/items/Get-RDSDBInstance.html
 
             $RDSDBInstanceObject = New-Object System.Object
@@ -299,6 +299,133 @@ function Get-OziAuditRDSDBSnapshots
     }
     return $AllRDSDBSnapshotObjects
 }
+function Get-OziAuditS3Buckets
+{
+    param
+    (
+        $Region
+    )
+    #Initializing objects and variables
+    $AllS3BucketObjects = @()
+    $S3BucketObject = @()
+
+    # Fetching all buckets
+    $BucketList = (Get-S3Bucket -Region $Region -ProfileName $AWSCredentialsProfile)
+
+    if($BucketList.Count -ge 1)
+    {
+        $DimensionName = "BucketName"
+        $DimensionName2 = "StorageType"
+        $Namespace = "AWS/S3"
+
+        foreach($b in $BucketList)
+        {    
+            $DimensionValue = $b.BucketName
+            $DimensionValue2 = "StandardStorage"
+            $Now = ([DateTime]::Now.ToString("yyyy-MM-ddTHH:mm:ss")).ToString()
+            $OneDayAgo = ([DateTime]::Now.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ss")).ToString()
+            $S3BucketObject = New-Object System.Object
+            $S3BucketObject | Add-Member -type NoteProperty -name Region -value $Region                    
+            $S3BucketObject | Add-Member -type NoteProperty -name BucketName -value $b.BucketName
+            $S3BucketObject | Add-Member -type NoteProperty -name CreationDate -value $b.CreationDate
+            $S3BucketObject | Add-Member -type NoteProperty -name SizeMBytes -value $(Get-OziCWS3GBUse "$($DimensionName)" "$($DimensionValue)" "$($DimensionName2)" "$($DimensionValue2)" "$($Namespace)" "$($Region)" "$($OneDayAgo)" "$($Now)")
+            $AllS3BucketObjects += $S3BucketObject
+        }
+    }
+    return $AllS3BucketObjects
+}
+function Get-OziCWS3GBUse
+{
+    param(
+        $DimensionName,
+        $DimensionValue,
+        $DimensionName2,
+        $DimensionValue2,        
+        $Namespace,
+        $Region,
+        $StartTime,
+        $EndTime
+    )
+
+    Clear-Variable -Name Average -ErrorAction SilentlyContinue
+    Clear-Variable -Name Usage -ErrorAction SilentlyContinue
+    Clear-Variable -Name Datapoint -ErrorAction SilentlyContinue
+    Clear-Variable -Name GrandTotal -ErrorAction SilentlyContinue
+    Clear-Variable -Name Dimension -ErrorAction SilentlyContinue 
+    Clear-Variable -Name Dimension2 -ErrorAction SilentlyContinue
+
+    $Dimension = New-Object Amazon.CloudWatch.Model.Dimension
+    $Dimension.set_Name($DimensionName)
+    $Dimension.set_Value($DimensionValue)   
+
+    $Dimension2 = New-Object Amazon.CloudWatch.Model.Dimension
+    $Dimension2.set_Name($DimensionName2)
+    $Dimension2.set_Value($DimensionValue2)   
+
+    [decimal]$Usage = ((Get-CWMetricStatistic -ProfileName $AWSCredentialsProfile -MetricName "BucketSizeBytes" -StartTime $StartTime -EndTime $EndTime -Period 3600 -Namespace $Namespace -Statistics "Average" -Dimension $Dimension,$Dimension2 -Region $Region).Datapoints.Average/1024/1024)
+
+    $Usage = [math]::Round($Usage,2)
+
+    return $Usage
+}
+function Read-CSV
+{
+    $CSV = Import-CSV -Path 'Amazon EC2 Instance Comparison.csv' -Delimiter ','
+    Write-Output "ApiName;LinuxOD/H;WindowsOD/H;LinuxOD/D;WindowsOD/D;LinuxOD/M;WindowsOD/M"
+
+    $AllLineObjects = @()
+    $LineObject = @()
+
+    foreach($Line in $CSV)
+    {
+        Clear-Variable LOD24 -ErrorAction SilentlyContinue
+        Clear-Variable LOD2431 -ErrorAction SilentlyContinue
+        Clear-Variable WOD24 -ErrorAction SilentlyContinue
+        Clear-Variable WOD2431 -ErrorAction SilentlyContinue
+
+        $APIN = $Line."API Name"
+        $LOD = $Line."Linux On Demand cost"
+        $WOD = $Line."Windows On Demand cost"
+        
+        if($LOD -like '*hourly*') { $LOD = $LOD.Replace(" hourly","").Replace("$","") }
+        if($WOD -like '*hourly*') { $WOD = $WOD.Replace(" hourly","").Replace("$","") }
+
+        if($LOD.Length -ne '11')
+        {
+            $LOD24 = [Math]::Round([float]($LOD)*24,2)
+            $LOD2431 = [Math]::Round($LOD24*31,2)
+        }
+        else {
+            $LOD = 'N/A';
+            $LOD24 = 'N/A';
+            $LOD2431 = 'N/A';
+        }
+        if($WOD.Length -ne '11')
+        {
+            $WOD24 = [Math]::Round([float]($WOD)*24,2)
+            $WOD2431 = [Math]::Round($WOD24*31,2)
+        }
+        else
+        {
+            $WOD = 'N/A';
+            $WOD24 = 'N/A';
+            $WOD2431 = 'N/A';
+        }             
+
+        $LineObject = New-Object System.Object                
+        $LineObject | Add-Member -type NoteProperty -name APIName -value $APIN          
+        $LineObject | Add-Member -type NoteProperty -name LinuxHourly -value $LOD
+        $LineObject | Add-Member -type NoteProperty -name LinuxDaily -value $LOD24
+        $LineObject | Add-Member -type NoteProperty -name LinuxMonthly -value $LOD2431
+        $LineObject | Add-Member -type NoteProperty -name WindowsHourly -value $WOD
+        $LineObject | Add-Member -type NoteProperty -name WindowsDaily -value $WOD24
+        $LineObject | Add-Member -type NoteProperty -name WindowsMonthly -value $WOD2431
+        $AllLineObjects += $LineObject
+    }
+
+    return $AllLineObjects
+}
+
 function Show-Summary
 {
     param
@@ -310,7 +437,8 @@ function Show-Summary
         $AllSnapshotObjects,
         $AllRDSDBInstanceObjects,
         $AllRDSDBSnapshotObjects,
-        $AllRDSDBReservedInstanceObjects        
+        $AllRDSDBReservedInstanceObjects,
+        $AllS3BucketObjects        
     )
 
     # EC2
@@ -322,8 +450,21 @@ function Show-Summary
     Write-Output ">> Total number of active reserved instances: $(($AllReservedInstanceObjects | Where-Object -Property State -eq 'active').Count)"
     Write-Output ">>>>"  
 
-    Write-Output "`n>>>>>> EC2 Stopped Instances list"           
+    Write-Output "`n>>>>>> EC2 Out-of-date Instances list"
+    $ArrayInstanceTypes = "t2.nano","t2.micro","t2.small","t2.medium","t2.large","t2.xlarge","t2.2xlarge","m4.large","m4.xlarge","m4.2xlarge","m4.4xlarge","m4.10xlarge","m4.16xlarge","m3.medium","m3.large","m3.xlarge","m3.2xlarge","c4.large","c4.xlarge","c4.2xlarge","c4.4xlarge","c4.8xlarge","c3.large","c3.xlarge","c3.2xlarge","c3.4xlarge","c3.8xlarge","p2.xlarge",,"p2.8xlarge","p2.16xlarge","g2.2xlarge","g2.8xlarge","x1.16large","x1.32xlarge","r4.large","r4.xlarge","r4.2xlarge","r4.4xlarge","r4.8xlarge","r4.16xlarge","r3.large","r3.xlarge","r3.2xlarge","r3.4xlarge","r3.8xlarge","i3.large","i3.xlarge","i3.2xlarge","i3.4xlarge","i3.8xlarge","i3.16large","d2.xlarge","d2.2xlarge","d2.4xlarge","d2.8xlarge","f1.2xlarge","f1.16xlarge"
+    foreach($i in ($AllInstanceObjects))
+    {
+        if($ArrayInstanceTypes -notcontains $i.InstanceType)
+        {
+            Write-Output ">> Region: $($i.Region)"
+            Write-Output ">> InstanceId: $($i.InstanceId)"        
+            Write-Output ">> Name: $($i.NameTagValue)"
+            Write-Output ">> Type: $($i.InstanceType)"
+            Write-Output ">>>>"  
+        }
+    }
 
+    Write-Output "`n>>>>>> EC2 Stopped Instances list"           
     foreach($i in ($AllInstanceObjects | Where-Object -Property 'State' -eq 'stopped'))
     {
         $Date = ""
@@ -341,6 +482,9 @@ function Show-Summary
         #$StoppedSinceHours =  $([math]::Ceiling((Get-Date).Subtract($StoppedSinceDateObject).TotalHours))
         $StoppedSinceDays =  $([math]::Round($((Get-Date).Subtract($StoppedSinceDateObject)).TotalDays,2))
         Write-Output ">> Days since shutdown: $StoppedSinceDays day(s) since shutdown (rounded)"
+        $Pricing = $(Get-InstancePrice $Prices $($i.InstanceType))
+        Write-Output ">> Pricing:"
+        Write-Output "$Pricing"
         
         # Volumes
         foreach($v in $AllVolumeObjects)
@@ -362,6 +506,7 @@ function Show-Summary
         {
             Write-Output ">> Region: $($v.Region)"         
             Write-Output ">> Volume not attached to any instance: $($v.VolumeId) (Type:$($v.VolumeType)/Size:$($v.Size)GB)"        
+            Write-Output ">> Pricing : $([Math]::Round([float]($v.Size)*0.10,2))$/Month"
             Write-Output ">>>>"
         }        
     }
@@ -415,7 +560,7 @@ function Show-Summary
 
     # RDS
     Write-Output "`n>>>>>> RDS DB Instances Globals"    
-    Write-Output ">> Total number of RDS DB instances: $($AllRDSDBInstanceObjects).Count)"
+    Write-Output ">> Total number of RDS DB instances: $(($AllRDSDBInstanceObjects).Count)"
     Write-Output ">> Total number of RDS DB stopped instances: $(($AllRDSDBInstanceObjects | Where-Object -Property 'DBInstanceStatus' -eq 'stopped').Count)"
     Write-Output ">> Percentage of started instances: $((($AllRDSDBInstanceObjects | Where-Object -Property 'DBInstanceStatus' -eq 'running').Count/($AllRDSDBInstanceObjects.Count)).ToString('P'))"
     Write-Output ">> Percentage of stopped instances: $((($AllRDSDBInstanceObjects | Where-Object -Property 'DBInstanceStatus' -eq 'stopped').Count/($AllRDSDBInstanceObjects.Count)).ToString('P'))"
@@ -461,6 +606,20 @@ function Show-Summary
     {
         Write-Output "`n>>>>>> No existing RDS snapshots"
     }
+
+    #S3
+    if($($AllS3BucketObjects).Count -ge 1)
+    {
+        Write-Output "`n>>>>>> S3 Buckets"
+        foreach($s in $($AllS3BucketObjects))
+        {
+            Write-Output ">> Region: $($s.Region)"         
+            Write-Output ">> BucketName: $($s.BucketName)"
+            Write-Output ">> CreationDate: $($s.CreationDate)"
+            Write-Output ">> SizeMBytes: $($s.SizeMBytes)MB"
+            Write-Output ">>>>" 
+        }        
+    }        
 }    
 function Show-GlobalTable
 {
@@ -470,12 +629,15 @@ function Show-GlobalTable
         $AllReservedInstanceObjects,
         $AllInstanceObjects,
         $AllAddressObjects,
-        $AllSnapshotObjects      
+        $AllSnapshotObjects,              
+        $AllRDSDBInstanceObjects,
+        $AllRDSDBSnapshotObjects,
+        $AllRDSDBReservedInstanceObjects          
     )
 
     Write-Output "`n>>>>>> Grand totals and summary"     
     Write-Output "Total number of instances/volumes/EIP/Snapshots per region (total/stopped/unattached/old):"
-    Write-Output ">> Region`t`tEC2-Total`tEC2-Off`t`tEBS-Total`tEBS-Unass.`tEIP-Total`tEIP-Unass.`tSnaps-Total`tSnaps-Old"
+    Write-Output ">> Region`t`tEC2-Total`tEC2-Off`t`tEBS-Total`tEBS-Unass.`tEIP-Total`tEIP-Unass.`tSnaps-Total`tSnaps-Old`tRDSDB-Total`tRDSDB-Off`tRDSSnapTot`tRDSSnapold"
 
     foreach($Region in $AWSRegions)
     {
@@ -488,6 +650,10 @@ function Show-GlobalTable
         $EIPCountAvail = 0
         $SnapshotsTotal = 0
         $SnapshotsOld = 0
+        $RDSDBInstanceTotal = 0
+        $RDSDBInstanceStopped = 0
+        $RDSDBSnapshotsTotal = 0
+        $RDSDBSnapshotsOld = 0
 
         $InstanceCountTotal   = ($AllInstanceObjects | Where-Object { $_.Region -eq $Region}).Count
         $InstanceCountStopped = ($AllInstanceObjects | Where-Object {($_.Region -eq $Region) -and ($_.State -eq "stopped")}).Count
@@ -497,8 +663,12 @@ function Show-GlobalTable
         $EIPCountAvail        = ($AllAddressObjects  | Where-Object {($_.Region -eq $Region) -and ($_.AssociationId -eq $NULL)}).Count
         $SnapshotsTotal       = ($AllSnapshotObjects | Where-Object { $_.Region -eq $Region}).Count
         $SnapshotsOld         = ($AllSnapshotObjects | Where-Object {($_.Region -eq $Region) -and (($_.StartTime) -lt ($([datetime]::Now).AddDays(-7)))}).Count
+        $RDSDBInstanceTotal   = ($AllRDSDBInstanceObjects | Where-Object   { $_.Region -eq $Region}).Count
+        $RDSDBInstanceStopped = ($AllRDSDBInstanceObjects | Where-Object   {($_.Region -eq $Region) -and ($_.DBInstanceStatus -eq 'stopped')}).Count
+        $RDSDBSnapshotsTotal  = ($AllRDSDBSnapshotObjects | Where-Object   { $_.Region -eq $Region}).Count
+        $RDSDBSnapshotsOld    = ($AllRDSDBSnapshotObjects | Where-Object   {($_.Region -eq $Region) -and (($_.SnapshotCreateTime) -lt ($([datetime]::Now).AddDays(-7)))}).Count
 
-        if($InstanceCountStopped+$VolumeCountAvail+$EIPCountAvail+$SnapshotsOld -ge 1)
+        if($InstanceCountStopped+$VolumeCountAvail+$EIPCountAvail+$SnapshotsOld+$RDSDBInstanceStopped+$RDSDBSnapshotsOld -ge 1)
         {
             $Highlight = "Red"
         }
@@ -508,10 +678,10 @@ function Show-GlobalTable
         }
         if($Region.ToString().Length -gt 12)
         {
-            Write-Host -ForeGroundColor $HighLight ">> $Region`t$InstanceCountTotal`t`t$InstanceCountStopped`t`t$VolumeCountTotal`t`t$VolumeCountAvail`t`t$EIPCountTotal`t`t$EIPCountAvail`t`t$SnapshotsTotal`t`t$SnapshotsOld"
+            Write-Host -ForeGroundColor $HighLight ">> $Region`t$InstanceCountTotal`t`t$InstanceCountStopped`t`t$VolumeCountTotal`t`t$VolumeCountAvail`t`t$EIPCountTotal`t`t$EIPCountAvail`t`t$SnapshotsTotal`t`t$SnapshotsOld`t`t$RDSDBInstanceTotal`t`t$RDSDBInstanceStopped`t`t$RDSDBSnapshotsTotal`t`t$RDSDBSnapshotsOld"
         }
         else {
-            Write-Host -ForeGroundColor $HighLight ">> $Region`t`t$InstanceCountTotal`t`t$InstanceCountStopped`t`t$VolumeCountTotal`t`t$VolumeCountAvail`t`t$EIPCountTotal`t`t$EIPCountAvail`t`t$SnapshotsTotal`t`t$SnapshotsOld"
+            Write-Host -ForeGroundColor $HighLight ">> $Region`t`t$InstanceCountTotal`t`t$InstanceCountStopped`t`t$VolumeCountTotal`t`t$VolumeCountAvail`t`t$EIPCountTotal`t`t$EIPCountAvail`t`t$SnapshotsTotal`t`t$SnapshotsOld`t`t$RDSDBInstanceTotal`t`t$RDSDBInstanceStopped`t`t$RDSDBSnapshotsTotal`t`t$RDSDBSnapshotsOld"
         }
     }
 }
@@ -528,14 +698,28 @@ function Get-OwnerId
     return $OwnerId
 }
 
+function Get-InstancePrice
+{
+    param(
+        $Prices,
+        $InstanceType
+    )
+    #$Prices | Where-Object -Property APIName -eq $InstanceType | Select-Object -ExpandProperty WindowsMonthly
+    Write-Output ">>> Windows Monthly: $($Prices | Where-Object -Property APIName -eq $InstanceType | Select-Object -ExpandProperty WindowsMonthly)"
+    #$Prices | Where-Object -Property APIName -eq $InstanceType | Select-Object -ExpandProperty LinuxMonthly
+    Write-Output "`n>>> Linux Monthly: $($Prices | Where-Object -Property APIName -eq $InstanceType | Select-Object -ExpandProperty LinuxMonthly)"
+}
+
+
 $AWSCredentialsProfile = 'default'
 #$AWSRegions = (Get-AWSRegion).Region
 $AWSRegions = 'eu-central-1','us-east-1','ap-northeast-1'
+$Prices = Read-CSV
 
 function Start-Main
 {
     $CurrentTime = $(Get-Date -Format yyyyMMdd-hhmmss)    
-    Start-Transcript -Path "$($CurrentTime).txt"
+    Start-Transcript -Path "$($CurrentTime)-Transcript.txt"
     
     Write-Output "Script started at $CurrentTime"
     $OwnerId = Get-OwnerId
@@ -560,13 +744,18 @@ function Start-Main
         $AllRDSDBSnapshotObjects += Get-OziAuditRDSDBSnapshots $Region
         #RDSDB Reserved Instances
         $AllRDSDBReservedInstanceObjects += Get-OziAuditRDSDBReservedInstances $Region
+        #S3 Buckets
+        $AllS3BucketObjects += Get-OziAuditS3Buckets $Region
     } 
+    Write-Output "Done fetching info."
     Write-Output "`n"
 
-    Show-Summary $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects $AllRDSDBInstanceObjects $AllRDSDBSnapshotObjects $AllRDSDBReservedInstanceObjects
-    # Show-GlobalTable $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects 
+    Show-Summary $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects $AllRDSDBInstanceObjects $AllRDSDBSnapshotObjects $AllRDSDBReservedInstanceObjects $AllS3BucketObjects
+    Show-GlobalTable $AllVolumeObjects $AllReservedInstanceObjects $AllInstanceObjects $AllAddressObjects $AllSnapshotObjects $AllRDSDBInstanceObjects $AllRDSDBSnapshotObjects $AllRDSDBReservedInstanceObjects $AllS3BucketObjects
     
     Write-Output "`n"
+
+    
     Write-Output "Exporting data to CSV:"
 
     foreach($Instance in $AllInstanceObjects)
@@ -600,7 +789,11 @@ function Start-Main
     foreach($RDSDBReservedInstance in $AllRDSDBReservedInstanceObjects)
     {
         $RDSDBReservedInstance | Export-CSV -Path $CurrentTime-RDSDBReservedInstance.csv -Append -NoTypeInformation -Delimiter ";"
-    }           
+    }     
+    foreach($S3BucketObject in $AllS3BucketObjects)
+    {
+        $S3BucketObject | Export-CSV -Path $CurrentTime-S3Bucket.csv -Append -NoTypeInformation -Delimiter ";"
+    }               
     Write-Output "Done."
     Stop-Transcript             
 }

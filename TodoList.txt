@@ -36,6 +36,8 @@ $data = (Get-CWMetricStatistic -MetricName CPUUtilization -StartTime 2017-06-22T
 
 $data = (Get-CWMetricStatistic -MetricName CPUUtilization -StartTime 2017-06-22T12:00:00 -EndTime 2017-06-26T12:00:00 -Period 3600 -Namespace AWS/EC2 -Statistics "Maximum" -Dimension $dimension1 -Region eu-central-1)
 
+
+
 foreach($datapoint in $data.Datapoints){
 	$grandTotal += $datapoint.Maximum
 }
@@ -45,14 +47,14 @@ foreach($datapoint in $data.Datapoints){
 Done - RDS
 Done - RDS Snapshots
 Done - CSV Export
+Done - Estimate monthly pricing
+Done -  Hashtable pour comparer les générations et voir si les instances sont à jour
+Done - RDS monitoring
 
 Todo
 
-Hashtable pour comparer les générations et voir si les instances sont à jour
-Custom counters pour obtenir l'espace disque libre sous windows
+Custom counters pour obtenir l'espace disque libre sous windows - Necéssite un agent installé localement
 ELB monitoring
+RDS monitoring
 S3 Bucket number and size
 Trusted advisor api calls
-
-
-
